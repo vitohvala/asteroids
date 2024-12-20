@@ -2,12 +2,10 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <math.h>
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <float.h>
 #include <strings.h>
 #include <time.h>
 #include <linmath.h>
@@ -25,6 +23,7 @@
 #define R_WIDTH                1280.0f
 #define R_HEIGHT               720.0f
 #define DRAG                   0.035
+#define CAPACITY               256
 
 typedef struct {
     float x, y;
@@ -48,10 +47,16 @@ typedef struct {
 
 typedef struct {
     int size;
-    int capacity;
-    Vector2 *pos;
-    Vector2 *dir;
+    Vector2 pos[CAPACITY];
+    Vector2 dir[CAPACITY];
 } Bullet;
+
+typedef struct {
+    unsigned int vao;
+    unsigned int vbo;
+    //unsigned int ebo;
+    unsigned int size;
+} Renderer;
 
 mat4x4 projection;
 unsigned int shader;
@@ -88,6 +93,33 @@ SDL_Window
     fprintf(stdout, "VERSION %s\n",  glGetString(GL_VERSION));
 
     return window;
+}
+
+Renderer renderer_init(unsigned int size) {
+    Renderer r;
+    r.size = size;
+
+    glGenVertexArrays(1, &r.vao);
+    glGenBuffers(1, &r.vbo);
+    
+    glBindVertexArray(r.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, r.vbo);
+    glBufferData(GL_ARRAY_BUFFER, size, NULL, GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    return r;
+}
+
+void update_renderer(Renderer *renderer, float *vert, unsigned int size) {
+    if (size > renderer->size) {
+        glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
+        glBufferData(GL_ARRAY_BUFFER, size, NULL, GL_DYNAMIC_DRAW);
+        renderer->size = size;
+    }
+    
+    glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size, vert);
 }
 
 Vector2
@@ -159,7 +191,7 @@ check_shader_err(unsigned int shader, GLenum pname, char *err_str)
     
     if(!success) {
         glGetShaderInfoLog(shader, 512, NULL, infoLog);
-        fprintf(stderr, "ERROR SHADER %s COMPILATION_FAILED %s\n", infoLog, err_str);
+        fprintf(stderr, "ERROR SHADER %s COMPILATION_FAILED %s\n", err_str, infoLog);
     }
 
 }
@@ -194,8 +226,9 @@ rand_float( float min, float max )
     return min + (rand() / (float) RAND_MAX) * (max - min); 
 }
 
-void 
-draw_asteroid(Asteroid *asteroid)
+
+void
+draw_asteroid(Asteroid *asteroid , Renderer *renderer)
 {
     srand(asteroid->seed);
     int n = rand() % (10 - 7 + 1) + 7; 
@@ -213,9 +246,8 @@ draw_asteroid(Asteroid *asteroid)
         vert[index++] = 0.0f;
     }
     
-    unsigned int vao, vbo;
-    vao_init(&vao, &vbo, vert, sizeof(vert));
-    draw(GL_LINE_LOOP, asteroid->pos, asteroid->size, asteroid->angle, vao, n);    
+    update_renderer(renderer, vert, n * 3 * sizeof(float));
+    draw(GL_LINE_LOOP, asteroid->pos, asteroid->size, asteroid->angle, renderer->vao, n);    
 }
 
 bool
@@ -235,16 +267,6 @@ angle_ast(Asteroid *a, Asteroid *b) {
     return true;
 }
 
-Bullet
-b_init() {
-    Bullet p;
-    p.size = 0;
-    p.capacity = 512;
-    p.pos = (Vector2*)malloc(p.capacity * sizeof(Vector2));
-    p.dir = (Vector2*)malloc(p.capacity * sizeof(Vector2));
-    return p;
-}
-
 void
 b_append_pos(Bullet *p, Vector2 pos, Vector2 dir) {
     p->pos[p->size].x = pos.x;
@@ -253,24 +275,26 @@ b_append_pos(Bullet *p, Vector2 pos, Vector2 dir) {
     p->dir[p->size].y = dir.y;
 
     p->size++;
-    if(p->size >= p->capacity) {
+    if(p->size >= CAPACITY) {
         p->size = 0;
     }
 }
 
-void
-b_free(Bullet *p){
-    p->capacity = 0;
-    p->size = 0;
-    free(p->pos);
-    free(p->dir);
-}
-
-void shoot(Bullet *points) {
+void shoot(Bullet *points, Renderer *r) {
+    float vert[points->size * 6];
+    int ind = 0;
     for(int i = 0; i < points->size; i++) {
+        vert[ind++] = points->pos[i].x;
+        vert[ind++] = points->pos[i].y;
+        vert[ind++] = 0.0f;
+
         Vector2 temp = vector2_add(points->pos[i], vector2_scale(points->dir[i], 5.0f));
-        draw_line_v(points->pos[i], temp);
+        vert[ind++] = temp.x;
+        vert[ind++] = temp.y;
+        vert[ind++] = 0.0f;
     }
+    update_renderer(r, vert, points->size * 6 * sizeof(float));
+    draw(GL_LINES, V2_DUMMY, (Vector2){1, 1}, 0.0f, r->vao, ind / 3);
 }
 
 int
@@ -357,8 +381,11 @@ main(void)
     }
 
     float angle = 0.0f;
-    Bullet b = b_init();
+    Bullet b = {.size = 0};
+
     Vector2 dir_player = get_direction(angle);
+    Renderer r = renderer_init(0);
+    Renderer r2 = renderer_init(0);
 
     while(running) {
         int nr_v = 6;
@@ -369,9 +396,9 @@ main(void)
                 case SDL_EVENT_QUIT :
                     running = 0;
                     break;
-                case SDL_EVENT_KEY_UP:
+                case SDL_EVENT_KEY_DOWN:
                     if(ev.key.scancode == SDL_SCANCODE_J) {
-                        Vector2 t = vector2_add(player, vector2_scale(dir_player, delta_time * PLAYER_SPEED * 43));
+                        Vector2 t = vector2_add(player, vector2_scale(dir_player, PSIZE / 2.0f));
                         b_append_pos(&b, t, dir_player);
                     }
                     break;
@@ -408,14 +435,23 @@ main(void)
             asteroid[i].pos = vector2_modf(asteroid[i].pos, R_WIDTH, R_HEIGHT);
         }
         for(int i = 0; i < b.size; i++) {
-            b.pos[i] = vector2_add(b.pos[i], vector2_scale(b.dir[i], delta_time * PLAYER_SPEED * 6));
+            b.pos[i] = vector2_add(b.pos[i], vector2_scale(b.dir[i], delta_time * PLAYER_SPEED * 10));
+            if(b.pos[i].x > 1280 || b.pos[i].y > 720 || b.pos[i].x < 0 || b.pos[i].y < 0) {
+                for(int j = i; j < b.size - 1; j++) {
+                    b.pos[j] = b.pos[j + 1];
+                    b.dir[j] = b.dir[j + 1];
+                }
+
+                b.size--;
+                i--;
+            }
         }
         
         draw(GL_LINE_STRIP, player, V2_PSIZE, angle, vao, nr_v);
-       for(int i = 0; i < MAX_ASTEROIDS; i++){
-            draw_asteroid(&asteroid[i]);
+        for(int i = 0; i < MAX_ASTEROIDS; i++){
+            draw_asteroid(&asteroid[i], &r);
         }
-        shoot(&b);
+        shoot(&b, &r2);
 
         SDL_GL_SwapWindow(window);
         counter2 = SDL_GetPerformanceCounter();
@@ -425,7 +461,6 @@ main(void)
     }
     
     SDL_DestroyWindow(window);
-    b_free(&b);
     SDL_Quit();
     return 0;
 }
