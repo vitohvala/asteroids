@@ -1,6 +1,6 @@
-CC=clang
+CC=gcc
 LIBS=-lSDL3 -lm
-FLAGS=-g -Wall -Wextra
+FLAGS=-g -Wall -Wextra -O2
 INCDIR=-I./include/
 LIBDIR=-L./lib/
 TARGET=main.c glad.c

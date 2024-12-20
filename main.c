@@ -1,17 +1,11 @@
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <stdlib.h>
-#include <stdio.h>
-#include <strings.h>
-#include <time.h>
 #include <linmath.h>
 
-#define ERROR_EXIT(E, ...)     fprintf(stderr, __VA_ARGS__); exit(E)
-#define ERROR_RETURN(R, ...)   fprintf(stderr, __VA_ARGS__); return R
+#define ERROR_EXIT(E, ...)     SDL_Log(__VA_ARGS__); exit(E)
+#define ERROR_RETURN(R, ...)   SDL_Log(__VA_ARGS__); return R
 #define PLAYER_SPEED           25
 #define MAX_ASTEROIDS          12
 #define VERTEX_SIZE(vertex, x) ((sizeof(vertex) / sizeof(vertex[0]) / x))
@@ -65,7 +59,7 @@ SDL_Window
 *init_window(int width, int height)
 {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        printf("SDL initialization failed: %s\n", SDL_GetError());
+        SDL_Log("SDL initialization failed: %s\n", SDL_GetError());
     }
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -87,10 +81,10 @@ SDL_Window
         ERROR_EXIT(1, "Failed to initialize glad\n");
     }
 
-    puts("GL Loaded");
-    fprintf(stdout, "VENDOR %s\n",   glGetString(GL_VENDOR));
-    fprintf(stdout, "RENDERER %s\n", glGetString(GL_RENDERER));
-    fprintf(stdout, "VERSION %s\n",  glGetString(GL_VERSION));
+    SDL_Log("GL Loaded");
+    SDL_Log("VENDOR %s\n",   glGetString(GL_VENDOR));
+    SDL_Log("RENDERER %s\n", glGetString(GL_RENDERER));
+    SDL_Log("VERSION %s\n",  glGetString(GL_VERSION));
 
     return window;
 }
@@ -139,8 +133,8 @@ vector2_add(Vector2 a, Vector2 b)
 
 Vector2
 vector2_modf(Vector2 a, const float d1, const float d2) {
-    return (Vector2){ .x = fmodf(fmodf(a.x, d1) + d1, d1),
-        .y = fmodf(fmodf(a.y, d2) + d2, d2) };
+    return (Vector2){ .x = SDL_fmodf(SDL_fmodf(a.x, d1) + d1, d1),
+        .y = SDL_fmodf(SDL_fmodf(a.y, d2) + d2, d2) };
 }
 
 void 
@@ -165,8 +159,8 @@ draw(GLenum mode, Vector2 pos, Vector2 size,
 Vector2 
 get_direction(float angle) 
 {
-    Vector2 dir = { .x = cosf(angle + (M_PI * 0.5f)),
-        .y = sinf(angle + (M_PI * 0.5f)) };
+    Vector2 dir = { .x = SDL_cosf(angle + (M_PI * 0.5f)),
+                    .y = SDL_sinf(angle + (M_PI * 0.5f)) };
    return dir;
 }
 
@@ -187,11 +181,15 @@ check_shader_err(unsigned int shader, GLenum pname, char *err_str)
 {
     int  success;
     char infoLog[512];
-    glGetShaderiv(shader, pname, &success);
+    if(pname == GL_LINK_STATUS) {
+        glGetProgramiv(shader, pname, &success);
+    } else {
+        glGetShaderiv(shader, pname, &success);
+    }
     
     if(!success) {
         glGetShaderInfoLog(shader, 512, NULL, infoLog);
-        fprintf(stderr, "ERROR SHADER %s COMPILATION_FAILED %s\n", err_str, infoLog);
+        SDL_Log("ERROR SHADER %s COMPILATION_FAILED %s\n", err_str, infoLog);
     }
 
 }
@@ -201,8 +199,8 @@ draw_line(float x1, float y1, float x2, float y2)
     float dx = x2 - x1;
     float dy = y2 - y1;
         
-    float length = sqrt(dx*dx + dy*dy);
-    float angle  = atan2(dy, dx);
+    float length = SDL_sqrt(dx*dx + dy*dy);
+    float angle  = SDL_atan2(dy, dx);
 
     float vert[] = {
          0.0f, 0.0f, 0.0f,
@@ -220,26 +218,19 @@ draw_line_v(Vector2 pos, Vector2 end_pos)
     draw_line(pos.x, pos.y, end_pos.x, end_pos.y);
 }
 
-float
-rand_float( float min, float max )
-{
-    return min + (rand() / (float) RAND_MAX) * (max - min); 
-}
-
-
 void
 draw_asteroid(Asteroid *asteroid , Renderer *renderer)
 {
-    srand(asteroid->seed);
-    int n = rand() % (10 - 7 + 1) + 7; 
+    SDL_srand(asteroid->seed);
+    int n = 7 + SDL_rand(13 - 7 + 1); 
     float vert[(n) * 3];  
     
     int index = 0;
     for(int i = 0; i < n; i++) {
-        float radius = 0.6f * (1.0f + rand_float(-0.7f, 0.7f));
+        float radius = 0.6f * (1.0f + (-0.5 + SDL_randf() * (0.5 - (-0.5))));
         float angle = ((TAU * (float)(i)) / (float)n); 
-        float x = radius * cosf(angle);
-        float y = radius * sinf(angle);
+        float x = radius * SDL_cosf(angle);
+        float y = radius * SDL_sinf(angle);
         
         vert[index++] = x;
         vert[index++] = y;
@@ -303,7 +294,7 @@ main(void)
     SDL_Window *window = init_window(1280, 720);
 
     uint8_t running = 1;
-    srand(time(0));
+    SDL_srand(0);
 
     float vertices[] = {
         -0.4f, -0.5f, 0.0f,
@@ -359,7 +350,7 @@ main(void)
 
     Uint64 freq = SDL_GetPerformanceFrequency();
     Uint64 counter1 = SDL_GetPerformanceCounter(), counter2;
-    float delta_time;
+    float delta_time = 0.0f;
 
     mat4x4_ortho(projection,  0.0f, R_WIDTH, R_HEIGHT, 0.0f, 
             -1.0f, 1.0f); 
@@ -371,13 +362,13 @@ main(void)
     Vector2 player_vel = { .x = .0f, .y = .0f };
 
     for(int i = 1; i < MAX_ASTEROIDS; i++){
-        asteroid[i].pos.x = rand_float(1.0f, R_WIDTH);
-        asteroid[i].pos.y = rand_float(1.0f, R_HEIGHT);
-        asteroid[i].size.x = rand_float(45.0f, 80.0f); 
-        asteroid[i].size.y = rand_float(45.0f, 80.0f);
-        asteroid[i].angle = rand_float(-TAU, TAU);
-        asteroid[i].vel = rand_float(PLAYER_SPEED * 1.5f, PLAYER_SPEED * 3.0f);
-        asteroid[i].seed = rand();
+        asteroid[i].pos.x = SDL_randf() * R_WIDTH;
+        asteroid[i].pos.y = SDL_randf() * R_HEIGHT;
+        asteroid[i].size.x = 40.0f + SDL_randf() * (80.0f - 40.0f); 
+        asteroid[i].size.y = 40.0f + SDL_randf() * (80.0f - 40.0f);
+        asteroid[i].angle = -TAU + SDL_randf() * (TAU - (-TAU));
+        asteroid[i].vel = PLAYER_SPEED * 1.5 + SDL_randf() * ((PLAYER_SPEED * 3.0) - (PLAYER_SPEED * 1.5));
+        asteroid[i].seed = SDL_rand_bits();
     }
 
     float angle = 0.0f;
