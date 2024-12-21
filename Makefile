@@ -1,6 +1,6 @@
-CC=gcc
+CC=tcc
 LIBS=-lSDL3 -lm
-FLAGS=-g -Wall -Wextra -O2
+FLAGS= -g -Wall -Wextra -O2
 INCDIR=-I./include/
 LIBDIR=-L./lib/
 TARGET=main.c glad.c
@@ -14,3 +14,6 @@ run: all
 
 clean: 
 	rm $(BIN)
+
+asm:  
+	$(CC) -S $(TARGET) $(LIBDIR) $(INCDIR) $(FLAGS) $(LIBS)
