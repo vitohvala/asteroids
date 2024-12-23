@@ -1,6 +1,10 @@
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_timer.h>
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <linmath.h>
 
@@ -26,6 +30,7 @@ typedef struct {
     int seed;
     float angle;
     float vel;
+    Uint8 len;
 } Asteroid;
 
 typedef struct {
@@ -34,12 +39,14 @@ typedef struct {
     Vector2 vel;
     Vector2 dir;
     float angle;
+    Uint8 life;
 } Player;
 
 typedef struct {
     int size;
     Vector2 pos[CAPACITY];
     Vector2 dir[CAPACITY];
+    Uint32 time[CAPACITY];
 } Bullet;
 
 typedef struct {
@@ -149,7 +156,7 @@ draw(GLenum mode, Vector2 pos, Vector2 size,
     mat4x4 trans;
     mat4x4_identity(trans);
     mat4x4 ret;
-    mat4x4_translate_in_place(trans, pos.x, pos.y, 0.0f);
+    mat4x4_translate(trans, pos.x, pos.y, 0.0f);
     mat4x4_rotate(ret, trans, 0.0f, 0.0f, 1.0f, angle);
     mat4x4_scale_aniso(trans, ret, size.x, size.y, 0.0);
 
@@ -248,12 +255,13 @@ draw_asteroid(Asteroid *asteroid , Renderer *renderer)
 }
 
 void
-b_append_pos(Bullet *p, Vector2 pos, Vector2 dir)
+b_append_pos(Bullet *p, Vector2 pos, Vector2 dir, Uint32 counter1)
 {
     p->pos[p->size].x = pos.x;
     p->pos[p->size].y = pos.y;
     p->dir[p->size].x = dir.x;
     p->dir[p->size].y = dir.y;
+    p->time[p->size] = counter1;
 
     p->size++;
     if(p->size >= CAPACITY) {
@@ -261,23 +269,49 @@ b_append_pos(Bullet *p, Vector2 pos, Vector2 dir)
     }
 }
 
-void
-shoot(Bullet *points, Renderer *r) 
-{
-    float vert[points->size * 6];
-    int ind = 0;
-    for(int i = 0; i < points->size; i++) {
-        vert[ind++] = points->pos[i].x;
-        vert[ind++] = points->pos[i].y;
-        vert[ind++] = 0.0f;
-
-        Vector2 temp = vector2_add(points->pos[i], vector2_scale(points->dir[i], 5.0f));
-        vert[ind++] = temp.x;
-        vert[ind++] = temp.y;
-        vert[ind++] = 0.0f;
+Vector2 drw_t(Vector2 p, Vector2 size) {
+    Vector2 tmp = {-100, -100};
+    if (p.x - (size.x ) < 0){
+        tmp.x = p.x + R_WIDTH;
+        tmp.y = p.y;
     }
-    update_renderer(r, vert, points->size * 6 * sizeof(float));
-    draw(GL_LINES, (Vector2){0, 0}, (Vector2){1, 1}, 0.0f, r->vao, ind / 3);
+    if (p.y - (size.y) < 0){
+        tmp.y = p.y + R_HEIGHT;
+        tmp.x = p.x;
+    }
+    if (p.x + (size.x) > R_WIDTH){
+        tmp.x = p.x - R_WIDTH;
+        tmp.y = p.y;
+    }
+    if (p.y + (size.y) > R_HEIGHT){
+        tmp.y = p.y - R_HEIGHT;
+        tmp.x = p.x;
+    }
+    return tmp;
+}
+
+bool collision(Vector2 pos1, Vector2 pos2, Vector2 size) {
+    if(sqrtf((pos1.x - pos2.x) * (pos1.x - pos2.x) + 
+                (pos1.y - pos2.y) * (pos1.y - pos2.y)) < (size.x / 2)) {
+        return true;
+
+    }
+    if(sqrtf((pos1.x - pos2.x) * (pos1.x - pos2.x) + 
+                (pos1.y - pos2.y) * (pos1.y - pos2.y)) < (size.y / 2)) {
+        return true;
+
+    }
+    return false;
+}
+
+bool 
+ast_collision(Vector2 pos, Asteroid *asteroid)
+{
+   for(int i = 0; i < MAX_ASTEROIDS; i++) {
+        bool r = collision(pos, asteroid[i].pos, asteroid[i].size);
+        if(r) return true;
+   } 
+   return false;
 }
 
 int
@@ -324,7 +358,9 @@ main(void)
     const char *fragmentShaderSource  = 
         "#version 330 core\n"
         "out vec4 FragColor;\n"
+        //"uniform float t;\n"
         "void main() { \n"
+        //"    vec3 color = 0.9 + 0.5 * (cos(t * vec3(0.5, 0.2, 0.3)));\n"
         "    FragColor = vec4(1.0, 1.0, 1.0, 1.0f);\n"
         "}\0"; 
 
@@ -352,7 +388,7 @@ main(void)
     Uint8 frame = 0;
 
     //Mozda bi ovo trebalo da bude Rectangle
-    Vector2 player = { .x = R_WIDTH / 2 - PSIZE, .y = R_HEIGHT / 2 - PSIZE };
+    Vector2 player = { .x = R_WIDTH / 2, .y = R_HEIGHT / 2 };
     Vector2 player_vel = { .x = .0f, .y = .0f };
 
     for(int i = 0; i < MAX_ASTEROIDS; i++){
@@ -360,19 +396,24 @@ main(void)
         asteroid[i].pos.y = SDL_randf() * R_HEIGHT;
         asteroid[i].size.x = 50.0f + SDL_randf() * (80.0f - 50.0f); 
         asteroid[i].size.y = 50.0f + SDL_randf() * (80.0f - 50.0f);
-        asteroid[i].angle = -TAU + SDL_randf() * (TAU - (-TAU));
-        asteroid[i].vel = PLAYER_SPEED * 1.5 + SDL_randf() * ((PLAYER_SPEED * 3.0) - (PLAYER_SPEED * 1.5));
+        asteroid[i].angle = ((SDL_randf() * 2.0f) - 1.0f) * TAU;
+        asteroid[i].vel =  ((SDL_randf() + 2.0)) * PLAYER_SPEED * 2;
         asteroid[i].seed = SDL_rand_bits();
     }
 
     float angle = 0.0f;
     Bullet b = {.size = 0};
 
+    glad_glPointSize(3); 
     Vector2 dir_player = {0.0f, 1.0f};
     dir_player = get_direction(angle);
     Renderer r = renderer_init(0);
     Renderer r2 = renderer_init(0);
 
+    Uint32 tick1 = SDL_GetTicks();
+
+    Player p;
+    p.life = 3;
     
     while(running) {
         int nr_v = 6;
@@ -382,16 +423,17 @@ main(void)
                 case SDL_EVENT_QUIT :
                     running = 0;
                     break;
-                case SDL_EVENT_KEY_DOWN:
+                case SDL_EVENT_KEY_UP:
                     if(ev.key.scancode == SDL_SCANCODE_J) {
                         Vector2 t = vector2_add(player, vector2_scale(dir_player, PSIZE / 2.0f));
-                        b_append_pos(&b, t, dir_player);
+                        b_append_pos(&b, t, dir_player, tick1);
+                        
                     }
                     break;
             }
         }
 
-        glClearColor(0.17f, .2f, .23f, 1.0f);
+        glClearColor(0.0f, .0f, .0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         const bool *keyboard = SDL_GetKeyboardState(NULL);
@@ -413,16 +455,42 @@ main(void)
 
         player_vel = vector2_scale(player_vel, 1.0f - DRAG);
         player = vector2_add(player, player_vel);
+        
+        Vector2 tmp_player = drw_t(player, (Vector2){PSIZE, PSIZE});
+
+        if(tmp_player.x > -100 && tmp_player.y > -100) {
+            draw(GL_LINE_STRIP, tmp_player, (Vector2){PSIZE, PSIZE}, angle, vao, nr_v);
+        }
+
         player = vector2_modf(player, R_WIDTH, R_HEIGHT);
 
         for(int i = 0; i < MAX_ASTEROIDS; i++) {
             Vector2 d = get_direction(asteroid[i].angle);
-            asteroid[i].pos = vector2_add(asteroid[i].pos,  vector2_scale(d, delta_time * asteroid[i].vel));
+            asteroid[i].pos = vector2_add(asteroid[i].pos, vector2_scale(d, delta_time * asteroid[i].vel));
+
+            Vector2 tmp_ast = drw_t(asteroid[i].pos, asteroid[i].size);
+
+            if(tmp_ast.x > -100 && tmp_ast.y > -100) {
+                Asteroid ast_ = asteroid[i];
+                ast_.pos = tmp_ast;
+                draw_asteroid(&ast_, &r);
+            }
+            if(collision(player, asteroid[i].pos, asteroid[i].size)) {
+                p.life -= 1;
+                SDL_Delay(1000);
+                //animate death
+                //
+            }
             asteroid[i].pos = vector2_modf(asteroid[i].pos, R_WIDTH, R_HEIGHT);
+            draw_asteroid(&asteroid[i], &r);
         }
+        //shoot(&b, &r2);
+        float vert[b.size * 3];
+        int ind = 0;
         for(int i = 0; i < b.size; i++) {
-            b.pos[i] = vector2_add(b.pos[i], vector2_scale(b.dir[i], delta_time * PLAYER_SPEED * 25.0f));
-            if(b.pos[i].x > 1280 || b.pos[i].y > 720 || b.pos[i].x < 0 || b.pos[i].y < 0) {
+            b.pos[i] = vector2_add(b.pos[i], vector2_scale(b.dir[i], delta_time * PLAYER_SPEED * 28.0f));
+            if(tick1 > (b.time[i] + 1300) || ast_collision(b.pos[i], asteroid)) {
+                b.time[i] = tick1;
                 for(int j = i; j < b.size - 1; j++) {
                     b.pos[j] = b.pos[j + 1];
                     b.dir[j] = b.dir[j + 1];
@@ -430,20 +498,30 @@ main(void)
 
                 b.size--;
                 i--;
+                continue;
             }
+            b.pos[i] = vector2_modf(b.pos[i], R_WIDTH, R_HEIGHT);
+            vert[ind++] = b.pos[i].x;
+            vert[ind++] = b.pos[i].y;
+            vert[ind++] = 0.0f;
         }
-        
+        update_renderer(&r2, vert, b.size * 3 * sizeof(float));
+        draw(GL_POINTS, (Vector2){0, 0}, (Vector2){1, 1}, 0.0f, r2.vao, ind / 3);
+
+        for(int i = 0; i < p.life; i++) {
+            draw(GL_LINE_STRIP, (Vector2){PSIZE * i + 20, 40}, (Vector2) {PSIZE, PSIZE}, 0, vao, 6);
+        }
+
         draw(GL_LINE_STRIP, player, (Vector2) {PSIZE, PSIZE}, angle, vao, nr_v);
-        for(int i = 0; i < MAX_ASTEROIDS; i++){
-            draw_asteroid(&asteroid[i], &r);
-        }
-        shoot(&b, &r2);
 
         SDL_GL_SwapWindow(window);
         counter2 = SDL_GetPerformanceCounter();
         delta_time = (float)(counter2 - counter1) / (float)freq;
-        counter1 = counter2;
         frame++;
+        tick1 = SDL_GetTicks();
+        //glUseProgram(shader);
+        //glUniform1f(glGetUniformLocation(shader, "t"), ((float)tick1 / 1000));
+        counter1 = counter2;
     }
     
     glDeleteProgram(shader);
