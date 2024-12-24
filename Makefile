@@ -1,4 +1,4 @@
-CC=tcc
+CC=gcc
 LIBS=-lSDL3 -lm
 FLAGS= -g -Wall -Wextra -O2
 INCDIR=-I./include/

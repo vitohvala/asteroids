@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <linmath.h>
@@ -319,6 +320,8 @@ min_max(float *min, float *max, float *min_vel, float *max_vel, ASTEROID_SIZE as
             *max_vel = PLAYER_SPEED * 10;
             *max = 35.0f;
             break;
+        case DEAD:
+            break;
     }
 
 }
@@ -382,7 +385,7 @@ bool collision(Vector2 *pos1, Vector2 *pos2, Vector2 *size) {
 bool 
 ast_collision(Vector2 *pos, Asteroid *asteroid, size_t *ast_size)
 {
-    for(int i = 0; i < *ast_size; i++) {
+    for(size_t i = 0; i < *ast_size; i++) {
         bool r = collision(pos, &asteroid[i].pos, &asteroid[i].size);
         Uint32 tick = SDL_GetTicks() + 1300;
         if(r && SDL_GetTicks() > asteroid[i].time){
@@ -432,6 +435,8 @@ ast_collision(Vector2 *pos, Asteroid *asteroid, size_t *ast_size)
                     //    asteroid[j] = asteroid[j + 1];
                     //}
                     //*ast_size -= 1;
+                    break;
+                case DEAD:
                     break;
             }
             return true;
@@ -515,14 +520,14 @@ main(void)
     Uint8 frame = 0;
     size_t ast_size = MAX_ASTEROIDS;
 
-    for(int i = 0; i < ast_size; i++){
+    for(size_t i = 0; i < ast_size; i++){
         asteroid[i].as = SDL_rand(3);
         get_rand_ast(&asteroid[i]);
         asteroid[i].time = 0;
     }
     
     bool dead = false;
-    Uint32 dtime;
+    Uint32 dtime = 0;
     Bullet b = {.size = 0};
 
     glad_glPointSize(3); 
@@ -600,7 +605,7 @@ main(void)
 
             p.pos = vector2_modf(p.pos, R_WIDTH, R_HEIGHT);
         }
-        for(int i = 0; i < ast_size; i++) {
+        for(size_t i = 0; i < ast_size; i++) {
             if(asteroid[i].time > tick1) {
                 int ind_p = 0;
                 float vert_p[6 * 3];
@@ -626,7 +631,7 @@ main(void)
             }
             
             if(asteroid[i].as == DEAD) {
-                for(int j = i; j < ast_size - 1; j++) {
+                for(size_t j = i; j < ast_size - 1; j++) {
                     asteroid[j] = asteroid[j + 1];
                 }
                 ast_size--;
