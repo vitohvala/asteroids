@@ -1,13 +1,8 @@
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <linmath.h>
-#include <string.h>
 
 #define ERROR_EXIT(E, ...)     SDL_Log(__VA_ARGS__); exit(E)
 #define ERROR_RETURN(R, ...)   SDL_Log(__VA_ARGS__); return R
@@ -407,8 +402,8 @@ ast_collision(Vector2 *pos, Asteroid *asteroid, size_t *ast_size)
                     asteroid[*ast_size + 1].as = MEDIUM;
                     asteroid[*ast_size + 1].time = tick;
                     get_rand_ast(&asteroid[*ast_size + 1]);
-                    asteroid[*ast_size + 1].pos.x = asteroid[*ast_size].pos.x + asteroid[*ast_size].pos.x;
-                    asteroid[*ast_size + 1].pos.y = asteroid[*ast_size].pos.y + (asteroid[*ast_size].pos.y / 2);
+                    asteroid[*ast_size + 1].pos.x = asteroid[*ast_size].pos.x + asteroid[*ast_size].size.x;
+                    asteroid[*ast_size + 1].pos.y = asteroid[*ast_size].pos.y + (asteroid[*ast_size].size.y / 2);
                     
                     *ast_size += 2;
                     break;
