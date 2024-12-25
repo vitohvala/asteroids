@@ -47,16 +47,15 @@ typedef struct {
 } Player;
 
 typedef struct {
-    int size;
     Vector2 pos[CAPACITY];
     Vector2 dir[CAPACITY];
     Uint32 time[CAPACITY];
+    int size;
 } Bullet;
 
 typedef struct {
     unsigned int vao;
     unsigned int vbo;
-    //unsigned int ebo;
     unsigned int size;
 } Renderer;
 
@@ -441,8 +440,11 @@ ast_collision(Vector2 *pos, Asteroid *asteroid, size_t *ast_size)
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
+    (void)argc;
+    (void)argv;
+
     SDL_Window *window = init_window(1280, 720);
     /* This makes our buffer swap syncronized with the monitor's vertical refresh */
     SDL_GL_SetSwapInterval(1);
@@ -562,7 +564,6 @@ main(void)
                     if(ev.key.scancode == SDL_SCANCODE_J && !dead) {
                         Vector2 t = vector2_add(p.pos, vector2_scale(&p.dir, PSIZE / 2.0f));
                         b_append_pos(&b, &t, &p.dir, tick1);
-                        
                     }
                     break;
             }
@@ -626,9 +627,7 @@ main(void)
             }
             
             if(asteroid[i].as == DEAD) {
-                for(size_t j = i; j < ast_size - 1; j++) {
-                    asteroid[j] = asteroid[j + 1];
-                }
+                asteroid[i] = asteroid[ast_size - 1];
                 ast_size--;
                 i--;
             }
@@ -658,11 +657,9 @@ main(void)
         int ind = 0;
         for(int i = 0; i < b.size; i++) {
             if(tick1 > (b.time[i] + 1300) || ast_collision(&b.pos[i], asteroid, &ast_size)) {
-                b.time[i] = tick1;
-                for(int j = i; j < b.size - 1; j++) {
-                    b.pos[j] = b.pos[j + 1];
-                    b.dir[j] = b.dir[j + 1];
-                }
+                //b.time[i] = tick1;
+                b.pos[i] = b.pos[b.size - 1]; 
+                b.dir[i] = b.dir[b.size - 1]; 
 
                 b.size--;
                 i--;
